@@ -35,10 +35,11 @@ userSchema.methods.isValidPassword = async function(password){
 }
 
 userSchema.methods.generateJWT = function(){
-    return jwt.sign({email: this.email},
+    return jwt.sign({email: this.email}, //<--- Email is encoded inside the JWT payload
          process.env.JWT_SECRET,
          { expiresIn: '92h' })
 }
+//The user’s email is included in the JWT payload when the token is generated.
 
 
 const User = mongoose.model('User', userSchema);
