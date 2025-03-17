@@ -3,15 +3,33 @@ import http from 'http';
 import app from './app.js';    
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
+import projectModel from './models/project.model.js';
 
 const port = process.env.PORT || 3000;
 
 const server = http.createServer(app);
-const io =  new Server(server);
-
-io.use((socket, next) => { // here socket is the client who is trying to connect to the server
+const io = new Server(server, {
+    cors: {
+      origin: "http://localhost:5173", // Ensure it matches your frontend URL
+      credentials: true
+    }
+  });
+  
+io.use(async(socket, next) => { // here socket is the client who is trying to connect to the server
    try{
+
+
     const token = socket.handshake.auth?.token  || socket.handshake.headers.authorization?.split(' ')[1]; // here we are trying to get the token from the client
+    const projectId = socket.handshake.query.projectId; // here we are trying to get the projectId from the client
+
+    if (!mongoose.Types.ObjectId.isValid(projectId)) {
+      return next(new Error("Invalid projectId"));
+    }
+    socket.project = await projectModel.findById(projectId); // here we are attaching the project to the socket
+    
+
+
     if(!token){
         return next(new Error("Authentication error"));
     }
@@ -34,9 +52,24 @@ io.use((socket, next) => { // here socket is the client who is trying to connect
 
 io.on('connection', socket  => {  // jab bh koi user connect karega toh ye event fire hoga
 
+   socket.roomId = socket.project._id.toString(); // here we are getting the projectId from the socket
+
     console.log('a user connected'); // log a message when a user connects to your server using the socketio
-  socket.on('event', data => { /* … */ });
-  socket.on('disconnect', () => { /* … */ });
+     
+    socket.join(socket.roomId); // here we are joining the user to the project room
+    console.log("User joined room:", socket.roomId);
+
+
+    socket.on('project-message',data=>{
+      console.log(data);
+
+      socket.broadcast.to(socket.roomId).emit('project-message',data); // here we are broadcasting the message to all the users in the project room
+    })
+    
+  socket.on('disconnect', () => { 
+    console.log('user disconnected'); // log a message when a user disconnects from your server using the socketio
+    socket.leave(socket.roomId); // here we are leaving the user from the project room
+  });
 });
 
 server.listen(port, () => {

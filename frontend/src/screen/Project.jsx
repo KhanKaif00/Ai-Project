@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect,useContext } from "react";
 import { useLocation } from "react-router-dom";
 import axios from '../config/axios';
+import { initiateSocket,receiveMessage,sendMessage } from "../config/socket";
+import { UserContext } from "../context/user.context";
 
 const Project = () => {
   const location = useLocation();
@@ -9,13 +11,21 @@ const Project = () => {
   const [selectedUserId, setSelectedUserId] = useState([]);
   const [users, setUsers] = useState([]);
   const [project, setProject] = useState(location.state.project);
+  const [message,setMessage] = useState('')
+  const {user} = useContext(UserContext);
+  const messageBox = React.createRef();
 
+useEffect(() => {
+    initiateSocket(project._id);
 
-  useEffect(() => {
+    receiveMessage('project-message', data => {
+        console.log(data);
+        appendIncomingMessage(data);
+    });
+
     axios.get(`/projects/get-project/${location.state.project._id}`)
       .then(res => {
         console.log("API Response:", res.data.p);
-
         setProject(res.data.project);
       })
       .catch(err => console.log(err));
@@ -26,7 +36,35 @@ const Project = () => {
         setUsers(res.data.users);
       })
       .catch(err => console.log(err));
-  }, []);
+
+}, []);
+
+function appendIncomingMessage(messsageObject) {
+  const messageBox = document.querySelector('.message-box');
+  const message = document.createElement('div');
+  message.classList.add('message', 'max-w-56', 'flex', 'flex-col', 'p-2', 'bg-slate-50', 'w-fit', 'rounded-md');
+  message.innerHTML = `
+    <small class="opacity-65 text-xm">${messsageObject.sender.email || messsageObject.sender}</small>  
+    <p class="text-sm">${messsageObject.message}</p>
+  `;
+  messageBox.appendChild(message);
+  scrollToBottom();
+}
+function appendOutgoingMessage(message) {
+  const messageBox = document.querySelector('.message-box');
+  const messageElement = document.createElement('div');
+  messageElement.classList.add('ml-auto', 'max-w-56', 'message', 'flex', 'flex-col', 'p-2', 'bg-slate-50', 'w-fit', 'rounded-md');
+  messageElement.innerHTML = `
+    <small class="opacity-65 text-xm">${user.email}</small>
+    <p class="text-sm">${message}</p>
+  `
+  messageBox.appendChild(messageElement);
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  messageBox.current.scrollTop = messageBox.current.scrollHeight;
+}
 
   const addCollaborators = () => {
     axios.put('/projects/add-user', {
@@ -52,12 +90,23 @@ const Project = () => {
       return Array.from(newSelectedUserId);
     });
   };
+  function send() {
+    sendMessage('project-message', {
+        message,
+        sender: { email: user.email }, // Ensure we send only the email, not the whole user object
+    });
+
+    appendOutgoingMessage(message);
+    setMessage('');
+}
+
+
 
 
   return (
     <main className="h-screen w-screen flex">
-      <section className="left relative flex flex-col h-full min-w-96 bg-slate-300">
-        <header className="flex justify-between items-center p-2 px-4 w-full bg-slate-100">
+      <section className="left relative flex flex-col h-screen min-w-96 bg-slate-300">
+        <header className="flex justify-between items-center p-2 px-4 w-full bg-slate-100 absolute top-0">
           <button className="flex gap-2" onClick={() => setIsModalOpen(true)}>
             <i className="ri-add-fill mr-1"></i>
             <p>Add Collaborator</p>
@@ -68,22 +117,23 @@ const Project = () => {
           </button>
         </header>
 
-        <div className="conversation-area flex-grow flex flex-col">
-          <div className="message-box p-1 flex-grow flex flex-col gap-1">
-            <div className="message max-w-56 flex flex-col p-2 bg-slate-50 w-fit rounded-md">
-              <small className="opacity-65 text-xm">example@gmail.com</small>
-              <p className="text-sm">Lorem ipsum dolor sit amet.</p>
-            </div>
-
-            <div className="ml-auto max-w-56 message flex flex-col p-2 bg-slate-50 w-fit rounded-md">
-              <small className="opacity-65 text-xm">example@gmail.com</small>
-              <p className="text-sm">Lorem ipsum dolor sit amet.</p>
-            </div>
+        <div className="conversation-area pt-16 pb-10 flex-grow flex flex-col h-full relative">
+          <div 
+          ref={messageBox}
+          className="message-box p-1 flex-grow flex flex-col gap-1 overflow-auto   max-h-full">
+            
           </div>
 
-          <div className="inputField w-full flex">
-            <input className="p-2 px-4 border-none outline-none flex-grow" type="text" placeholder="Type a message" />
-            <button className="px-5 bg-slate-950 text-white">
+          <div className="inputField w-full flex absolute bottom-0">
+            <input 
+             className="p-2 px-4 border-none outline-none flex-grow"
+             value={message}
+            onChange={(e)=>setMessage(e.target.value)}
+             type="text" 
+             placeholder="Type a message" />
+            <button 
+            onClick={send}
+            className="px-5 bg-slate-950 text-white">
               <i className="ri-send-plane-fill"></i>
             </button>
           </div>
