@@ -5,6 +5,7 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import projectModel from './models/project.model.js';
+import { generateResult } from './services/ai.service.js';
 
 const port = process.env.PORT || 3000;
 
@@ -60,10 +61,31 @@ io.on('connection', socket  => {  // jab bh koi user connect karega toh ye event
     console.log("User joined room:", socket.roomId);
 
 
-    socket.on('project-message',data=>{
+    socket.on('project-message', async data=>{
+      const message = data.message;
+      console.log(message);
+     
+      const aiIsPresentInMessage = message.includes('ai'); // here we are checking if the message contains the word 'ai' or not
+      socket.broadcast.to(socket.roomId).emit('project-message',data); // here we are broadcasting the message to all the users in the project room
+
+
+      if(aiIsPresentInMessage){
+          const prompt = message.replace('ai',''); // here we are removing the word 'ai' from the message
+          const result = await generateResult(prompt); // here we are generating the result using the prompt
+          
+          io.to(socket.roomId).emit('project-message', 
+            {
+              message: result,
+              sender:{
+                  _id: 'ai',
+                  email: 'AI'
+              }
+            
+            }); // here we are emitting the result to all the users in the project room
+        return;
+      } 
       console.log(data);
 
-      socket.broadcast.to(socket.roomId).emit('project-message',data); // here we are broadcasting the message to all the users in the project room
     })
     
   socket.on('disconnect', () => { 

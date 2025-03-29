@@ -1,8 +1,9 @@
-import React, { useState, useEffect,useContext } from "react";
+import React, { useState, useEffect, useContext, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import axios from '../config/axios';
-import { initiateSocket,receiveMessage,sendMessage } from "../config/socket";
+import { initiateSocket, receiveMessage, sendMessage } from "../config/socket";
 import { UserContext } from "../context/user.context";
+import Markdown from "markdown-to-jsx";
 
 const Project = () => {
   const location = useLocation();
@@ -11,21 +12,22 @@ const Project = () => {
   const [selectedUserId, setSelectedUserId] = useState([]);
   const [users, setUsers] = useState([]);
   const [project, setProject] = useState(location.state.project);
-  const [message,setMessage] = useState('')
-  const {user} = useContext(UserContext);
-  const messageBox = React.createRef();
+  const [message, setMessage] = useState('');
+  const [messages, setMessages] = useState([]); // Store messages as state
+  const { user } = useContext(UserContext);
+  const messageBox = useRef(null);
 
-useEffect(() => {
+  useEffect(() => {
     initiateSocket(project._id);
 
     receiveMessage('project-message', data => {
-        console.log(data);
-        appendIncomingMessage(data);
+      console.log(data);
+      setMessages(prevMessages => [...prevMessages, data]); // Update state with new message
     });
 
     axios.get(`/projects/get-project/${location.state.project._id}`)
       .then(res => {
-        console.log("API Response:", res.data.p);
+        console.log("API Response:", res.data.project);
         setProject(res.data.project);
       })
       .catch(err => console.log(err));
@@ -36,35 +38,24 @@ useEffect(() => {
         setUsers(res.data.users);
       })
       .catch(err => console.log(err));
+  }, []);
 
-}, []);
+  useEffect(() => {
+    if (messageBox.current) {
+      messageBox.current.scrollTop = messageBox.current.scrollHeight;
+    }
+  }, [messages]); // Scroll to bottom when messages update
 
-function appendIncomingMessage(messsageObject) {
-  const messageBox = document.querySelector('.message-box');
-  const message = document.createElement('div');
-  message.classList.add('message', 'max-w-56', 'flex', 'flex-col', 'p-2', 'bg-slate-50', 'w-fit', 'rounded-md');
-  message.innerHTML = `
-    <small class="opacity-65 text-xm">${messsageObject.sender.email || messsageObject.sender}</small>  
-    <p class="text-sm">${messsageObject.message}</p>
-  `;
-  messageBox.appendChild(message);
-  scrollToBottom();
-}
-function appendOutgoingMessage(message) {
-  const messageBox = document.querySelector('.message-box');
-  const messageElement = document.createElement('div');
-  messageElement.classList.add('ml-auto', 'max-w-56', 'message', 'flex', 'flex-col', 'p-2', 'bg-slate-50', 'w-fit', 'rounded-md');
-  messageElement.innerHTML = `
-    <small class="opacity-65 text-xm">${user.email}</small>
-    <p class="text-sm">${message}</p>
-  `
-  messageBox.appendChild(messageElement);
-  scrollToBottom();
-}
+  const send = () => {
+    const newMessage = {
+      message,
+      sender: { email: user.email }
+    };
 
-function scrollToBottom() {
-  messageBox.current.scrollTop = messageBox.current.scrollHeight;
-}
+    sendMessage('project-message', newMessage);
+    setMessages(prevMessages => [...prevMessages, newMessage]); // Add outgoing message to state
+    setMessage('');
+  };
 
   const addCollaborators = () => {
     axios.put('/projects/add-user', {
@@ -76,7 +67,7 @@ function scrollToBottom() {
         setIsModalOpen(false);
       })
       .catch(err => console.log(err));
-  }
+  };
 
   const handleUserClick = (id) => {
     setSelectedUserId(prevSelectedUserId => {
@@ -90,18 +81,6 @@ function scrollToBottom() {
       return Array.from(newSelectedUserId);
     });
   };
-  function send() {
-    sendMessage('project-message', {
-        message,
-        sender: { email: user.email }, // Ensure we send only the email, not the whole user object
-    });
-
-    appendOutgoingMessage(message);
-    setMessage('');
-}
-
-
-
 
   return (
     <main className="h-screen w-screen flex">
@@ -119,21 +98,42 @@ function scrollToBottom() {
 
         <div className="conversation-area pt-16 pb-10 flex-grow flex flex-col h-full relative">
           <div 
-          ref={messageBox}
-          className="message-box p-1 flex-grow flex flex-col gap-1 overflow-auto   max-h-full">
-            
+            ref={messageBox}
+            className="message-box p-1 flex-grow flex flex-col gap-1 overflow-auto max-h-full"
+          >
+            {messages.map((msg, index) => (
+              <div 
+                key={index} 
+                className={`message max-w-64 flex flex-col p-2 w-fit rounded-md ${
+                  msg.sender.email === user.email ? 'ml-auto bg-blue-200' : 'bg-slate-50'
+                }`}
+              >
+                <small className="opacity-65 text-xm">{msg.sender.email}</small>
+                {msg.sender._id === 'ai' ? (
+                  <div 
+                  className="overflow-auto bg-slate-950 text-white">
+
+                    <Markdown className="text-sm">{msg.message}</Markdown>
+                     </div>
+                ) : (
+                  <p className="text-sm">{msg.message}</p>
+                )}
+              </div>
+            ))}
           </div>
 
           <div className="inputField w-full flex absolute bottom-0">
             <input 
-             className="p-2 px-4 border-none outline-none flex-grow"
-             value={message}
-            onChange={(e)=>setMessage(e.target.value)}
-             type="text" 
-             placeholder="Type a message" />
+              className="p-2 px-4 border-none outline-none flex-grow"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              type="text" 
+              placeholder="Type a message" 
+            />
             <button 
-            onClick={send}
-            className="px-5 bg-slate-950 text-white">
+              onClick={send}
+              className="px-5 bg-slate-950 text-white"
+            >
               <i className="ri-send-plane-fill"></i>
             </button>
           </div>
@@ -147,7 +147,7 @@ function scrollToBottom() {
           </header>
 
           <div className="users flex flex-col gap-2">
-            { project.users.map(user => (
+            {project.users.map(user => (
               <div key={user._id} className="user p-2 flex gap-2 items-center">
                 <div className="aspect-square relative rounded-full w-fit h-fit flex items-center justify-center p-5 text-white bg-slate-600">
                   <i className="ri-user-fill absolute"></i>
@@ -176,17 +176,15 @@ function scrollToBottom() {
                   className={`user cursor-pointer hover:bg-slate-200 ${selectedUserId.includes(user._id) ? 'bg-slate-200' : ""} p-2 flex gap-2 items-center`} 
                   onClick={() => handleUserClick(user._id)}
                 >
-                  <div className='aspect-square relative rounded-full w-fit h-fit flex items-center justify-center p-5 text-white bg-slate-600'>
-                    <i className="ri-user-fill absolute"></i>
-                  </div>
                   <h1 className='font-semibold text-lg'>{user.email}</h1>
                 </div>
               ))}
             </div>
 
             <button
-            onClick={addCollaborators}
-            className='absolute bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-blue-600 text-white rounded-md'>
+              onClick={addCollaborators}
+              className='absolute bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-blue-600 text-white rounded-md'
+            >
               Add Collaborators
             </button>
           </div>
